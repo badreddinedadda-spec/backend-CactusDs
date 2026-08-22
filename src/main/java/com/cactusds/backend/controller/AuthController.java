@@ -1,4 +1,5 @@
 package com.cactusds.backend.controller;
+
 import com.cactusds.backend.dto.LoginRequest;
 import com.cactusds.backend.dto.RegisterRequest;
 import com.cactusds.backend.dto.UserResponse;
@@ -23,11 +24,14 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.web.csrf.CsrfToken;
+
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
@@ -39,6 +43,7 @@ public class AuthController {
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
     }
+
     @GetMapping("/me")
     public ResponseEntity<?> me(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()
@@ -100,5 +105,9 @@ public class AuthController {
             return userDetails.getUsername();
         }
         return authentication.getName();
+    }
+    @GetMapping("/csrf")
+    public void csrf(CsrfToken csrfToken) {
+        csrfToken.getToken();
     }
 }

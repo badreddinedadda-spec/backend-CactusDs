@@ -11,12 +11,12 @@ import java.io.IOException;
 
 @Component
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
-    @Value("${app.frontend-url")
+    @Value("${app.frontend-url}")
     private String frontendUrl;
 
     @Override
-    public void onAuthentificationSuccess(HttpSerletRequest request, HttpServletResponse response,
-                                          Authentication authentication) throws IOException {
+    public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
+                                        Authentication authentication) throws IOException {
         response.sendRedirect(frontendUrl);
     }
 }

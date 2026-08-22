@@ -14,6 +14,9 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import com.cactusds.backend.comon.security.CustomOAuth2UserService;
+import com.cactusds.backend.comon.security.OAuth2LoginSuccessHandler;
+import com.cactusds.backend.comon.security.RestAuthenticationEntryPoint;
 
 import java.util.List;
 

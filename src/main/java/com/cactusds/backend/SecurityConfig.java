@@ -1,5 +1,6 @@
 package com.cactusds.backend;
 
+import com.cactusds.backend.comon.security.SpaCsrfTokenRequestHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +43,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
                         .ignoringRequestMatchers("/api/auth/register", "/api/auth/login", "/api/contact")
                 )
                 .authorizeHttpRequests(auth -> auth

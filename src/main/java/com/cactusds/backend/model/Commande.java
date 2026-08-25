@@ -42,6 +42,10 @@ public class Commande {
     @Column(name = "date_expiration")
     private LocalDate dateExpiration;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "facture_id")
+    private Facture facture;
+
     @Builder.Default
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();

@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface CategorieOffreRepository extends JpaRepository<CategorieOffre, Long> {
     List<CategorieOffre> findByActifTrueOrderByOrdreAffichageAsc();
+    boolean existsBySlug(String slug);
+    boolean existsBySlugAndIdNot(String slug, Long id);
 }

@@ -1,5 +1,6 @@
 package com.cactusds.backend.controller;
 
+import com.cactusds.backend.comon.notification.NotificationService;
 import com.cactusds.backend.dto.TicketReplyRequest;
 import com.cactusds.backend.dto.TicketRequest;
 import com.cactusds.backend.dto.TicketResponse;
@@ -24,10 +25,12 @@ public class TicketController {
 
     private final TicketRepository ticketRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
-    public TicketController(TicketRepository ticketRepository, UserRepository userRepository) {
+    public TicketController(TicketRepository ticketRepository, UserRepository userRepository, NotificationService notificationService) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     @PostMapping("/api/client/tickets")
@@ -66,6 +69,7 @@ public class TicketController {
                     ticket.setStatut(req.statut() != null ? req.statut() : Ticket.Statut.RESOLU);
                     ticket.setUpdatedAt(LocalDateTime.now());
                     ticketRepository.save(ticket);
+                    notificationService.notifyTicketReply(ticket);
                     return ResponseEntity.ok(TicketResponse.from(ticket));
                 })
                 .orElse(ResponseEntity.notFound().build());

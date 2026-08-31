@@ -1,4 +1,5 @@
 package com.cactusds.backend.controller;
+import com.cactusds.backend.comon.billing.FactureService;
 import com.cactusds.backend.dto.CommandeRequest;
 import com.cactusds.backend.dto.CommandeResponse;
 import com.cactusds.backend.dto.StatutUpdateRequest;
@@ -26,12 +27,14 @@ public class CommandeController {
     private final CommandeRepository commandeRepository;
     private final OffreRepository offreRepository;
     private final UserRepository userRepository;
+    private final FactureService factureService;
 
     public CommandeController(CommandeRepository commandeRepository, OffreRepository offreRepository,
-                              UserRepository userRepository) {
+                              UserRepository userRepository, FactureService factureService) {
         this.commandeRepository = commandeRepository;
         this.offreRepository = offreRepository;
         this.userRepository = userRepository;
+        this.factureService = factureService;
     }
 
     @PostMapping("/api/client/commandes")
@@ -62,6 +65,8 @@ public class CommandeController {
                 .build();
 
         commandeRepository.save(commande);
+        // Bill immediately so the client sees a real facture without waiting on an admin.
+        factureService.generateForNewCommande(commande);
         return ResponseEntity.status(201).body(CommandeResponse.from(commande));
     }
 

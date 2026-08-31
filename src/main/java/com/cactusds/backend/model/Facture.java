@@ -38,4 +38,8 @@ public class Facture {
     @Builder.Default
     @Column(name = "date_emission", updatable = false)
     private LocalDateTime dateEmission = LocalDateTime.now();
+
+    @Builder.Default
+    @Column(name = "relance_envoyee")
+    private Boolean relanceEnvoyee = false;
 }

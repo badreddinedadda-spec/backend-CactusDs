@@ -1,5 +1,6 @@
 package com.cactusds.backend.controller;
 
+import com.cactusds.backend.comon.billing.FactureService;
 import com.cactusds.backend.comon.pdf.FacturePdfGenerator;
 import com.cactusds.backend.dto.FactureGenerateRequest;
 import com.cactusds.backend.dto.FactureResponse;
@@ -22,57 +23,33 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 
 @RestController
 public class FactureController {
-
     private final FactureRepository factureRepository;
     private final CommandeRepository commandeRepository;
     private final UserRepository userRepository;
     private final FacturePdfGenerator pdfGenerator;
+    private final FactureService factureService;
 
     public FactureController(FactureRepository factureRepository, CommandeRepository commandeRepository,
-                             UserRepository userRepository, FacturePdfGenerator pdfGenerator) {
+                             UserRepository userRepository, FacturePdfGenerator pdfGenerator,
+                             FactureService factureService) {
         this.factureRepository = factureRepository;
         this.commandeRepository = commandeRepository;
         this.userRepository = userRepository;
         this.pdfGenerator = pdfGenerator;
+        this.factureService = factureService;
     }
 
     @PostMapping("/api/admin/factures/generate")
     public ResponseEntity<FactureResponse> generate(@Valid @RequestBody FactureGenerateRequest req) {
-        if (req.periodeDebut().isAfter(req.periodeFin())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "periodeDebut must be before periodeFin");
-        }
         User client = userRepository.findById(req.userId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown userId"));
 
-        List<Commande> commandes = commandeRepository
-                .findByUserIdAndFactureIsNullAndDateDebutBetween(client.getId(), req.periodeDebut(), req.periodeFin());
-        if (commandes.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "No uninvoiced commandes found for this client in the given period");
-        }
-
-        BigDecimal total = commandes.stream()
-                .map(Commande::getPrixTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        Facture facture = Facture.builder()
-                .numero(nextNumero())
-                .user(client)
-                .periodeDebut(req.periodeDebut())
-                .periodeFin(req.periodeFin())
-                .montantTotal(total)
-                .build();
-        factureRepository.save(facture);
-
-        commandes.forEach(c -> c.setFacture(facture));
-        commandeRepository.saveAll(commandes);
-
+        Facture facture = factureService.generateForPeriod(client, req.periodeDebut(), req.periodeFin());
+        List<Commande> commandes = commandeRepository.findByFactureIdOrderByCreatedAtAsc(facture.getId());
         return ResponseEntity.status(201).body(FactureResponse.from(facture, commandes));
     }
 
@@ -136,13 +113,6 @@ public class FactureController {
                 .filename(facture.getNumero() + ".pdf")
                 .build());
         return new ResponseEntity<>(pdf, headers, HttpStatus.OK);
-    }
-
-    private String nextNumero() {
-        int year = LocalDate.now().getYear();
-        String prefix = "FAC-" + year + "-";
-        long count = factureRepository.countByNumeroStartingWith(prefix);
-        return prefix + String.format("%04d", count + 1);
     }
 
     private User currentUser(Authentication authentication) {

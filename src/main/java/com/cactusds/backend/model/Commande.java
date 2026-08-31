@@ -47,6 +47,10 @@ public class Commande {
     private Facture facture;
 
     @Builder.Default
+    @Column(name = "reminder_sent")
+    private Boolean reminderSent = false;
+
+    @Builder.Default
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

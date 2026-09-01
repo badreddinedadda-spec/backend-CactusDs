@@ -72,10 +72,24 @@ public class FactureController {
                                                         @Valid @RequestBody FactureStatutUpdateRequest req) {
         return factureRepository.findById(id)
                 .map(facture -> {
+                    Facture.Statut previousStatut = facture.getStatut();
                     facture.setStatut(req.statut());
                     factureRepository.save(facture);
-                    return ResponseEntity.ok(FactureResponse.from(facture,
-                            commandeRepository.findByFactureIdOrderByCreatedAtAsc(id)));
+
+                    List<Commande> commandes = commandeRepository.findByFactureIdOrderByCreatedAtAsc(id);
+                    if (req.statut() == Facture.Statut.PAYEE && previousStatut != Facture.Statut.PAYEE) {
+                        commandes.stream()
+                                .filter(c -> c.getStatut() == Commande.Statut.EN_ATTENTE)
+                                .forEach(c -> c.setStatut(Commande.Statut.ACTIVE));
+                        commandeRepository.saveAll(commandes);
+                    } else if (previousStatut == Facture.Statut.PAYEE && req.statut() != Facture.Statut.PAYEE) {
+                        commandes.stream()
+                                .filter(c -> c.getStatut() == Commande.Statut.ACTIVE)
+                                .forEach(c -> c.setStatut(Commande.Statut.EN_ATTENTE));
+                        commandeRepository.saveAll(commandes);
+                    }
+
+                    return ResponseEntity.ok(FactureResponse.from(facture, commandes));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }

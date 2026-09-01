@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
-
+import com.cactusds.backend.model.User;
 import java.time.format.DateTimeFormatter;
 
 @Component
@@ -46,6 +46,17 @@ public class NotificationService {
                 + "Vous pouvez la télécharger depuis votre espace client.\n\n"
                 + "L'équipe CactusDS";
         send(facture.getUser().getEmail(), "Nouvelle facture " + facture.getNumero(), body);
+    }
+
+    public void notifyPasswordReset(User user, String resetLink) {
+        String clientName = user.getFullName() != null ? user.getFullName() : user.getEmail();
+        String body = "Bonjour " + clientName + ",\n\n"
+                + "Vous avez demandé la réinitialisation de votre mot de passe CactusDS.\n\n"
+                + "Cliquez sur le lien suivant pour choisir un nouveau mot de passe (valable 1 heure, usage unique) :\n"
+                + resetLink + "\n\n"
+                + "Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email : votre mot de passe ne sera pas modifié.\n\n"
+                + "L'équipe CactusDS";
+        send(user.getEmail(), "Réinitialisation de votre mot de passe", body);
     }
 
     public void notifyExpirationReminder(Commande commande) {

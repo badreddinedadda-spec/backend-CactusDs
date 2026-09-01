@@ -1,5 +1,13 @@
 package com.cactusds.backend.controller;
 
+import com.cactusds.backend.comon.notification.NotificationService;
+import com.cactusds.backend.dto.ForgotPasswordRequest;
+import com.cactusds.backend.dto.ResetPasswordRequest;
+import com.cactusds.backend.model.PasswordResetToken;
+import com.cactusds.backend.repository.PasswordResetTokenRepository;
+import org.springframework.beans.factory.annotation.Value;
+import java.time.LocalDateTime;
+import java.util.UUID;
 import com.cactusds.backend.dto.LoginRequest;
 import com.cactusds.backend.dto.RegisterRequest;
 import com.cactusds.backend.dto.UserResponse;
@@ -33,15 +41,23 @@ import java.util.Map;
 public class AuthController {
 
     private final UserRepository userRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final NotificationService notificationService;
     private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
 
-    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                          AuthenticationManager authenticationManager) {
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
+
+    public AuthController(UserRepository userRepository, PasswordResetTokenRepository passwordResetTokenRepository,
+                          PasswordEncoder passwordEncoder, AuthenticationManager authenticationManager,
+                          NotificationService notificationService) {
         this.userRepository = userRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
+        this.notificationService = notificationService;
     }
 
     @GetMapping("/me")
@@ -106,8 +122,35 @@ public class AuthController {
         }
         return authentication.getName();
     }
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
+        userRepository.findByEmail(req.email()).ifPresent(user -> {
+            if (user.getAuthProvider() != AuthProvider.LOCAL) return; // Google-only: nothing to reset
+            String token = UUID.randomUUID().toString();
+            PasswordResetToken resetToken = PasswordResetToken.builder()
+                    .token(token).user(user).expiresAt(LocalDateTime.now().plusHours(1)).build();
+            passwordResetTokenRepository.save(resetToken);
+            notificationService.notifyPasswordReset(user, frontendUrl + "/hosting/reset-password?token=" + token);
+        });
+        return ResponseEntity.ok(Map.of("status", "ok")); // always 200 — never reveals if the email exists
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(req.token()).orElse(null);
+        if (resetToken == null || Boolean.TRUE.equals(resetToken.getUsed()) || resetToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+            return ResponseEntity.status(400).body(Map.of("error", "invalid_or_expired_token"));
+        }
+        User user = resetToken.getUser();
+        user.setPasswordHash(passwordEncoder.encode(req.newPassword()));
+        userRepository.save(user);
+        resetToken.setUsed(true);
+        passwordResetTokenRepository.save(resetToken);
+        return ResponseEntity.ok(Map.of("status", "ok"));
+    }
     @GetMapping("/csrf")
     public void csrf(CsrfToken csrfToken) {
         csrfToken.getToken();
     }
+
 }

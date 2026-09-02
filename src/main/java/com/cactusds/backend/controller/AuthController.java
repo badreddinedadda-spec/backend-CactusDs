@@ -1,5 +1,7 @@
 package com.cactusds.backend.controller;
 
+import com.cactusds.backend.comon.security.LoginAttemptService;
+import org.springframework.http.HttpStatus;
 import com.cactusds.backend.comon.notification.NotificationService;
 import com.cactusds.backend.dto.ForgotPasswordRequest;
 import com.cactusds.backend.dto.ResetPasswordRequest;
@@ -46,18 +48,19 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final NotificationService notificationService;
     private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
-
+    private final LoginAttemptService loginAttemptService;
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
     public AuthController(UserRepository userRepository, PasswordResetTokenRepository passwordResetTokenRepository,
                           PasswordEncoder passwordEncoder, AuthenticationManager authenticationManager,
-                          NotificationService notificationService) {
+                          NotificationService notificationService,LoginAttemptService loginAttemptService) {
         this.userRepository = userRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.notificationService = notificationService;
+        this.loginAttemptService=loginAttemptService;
     }
 
     @GetMapping("/me")
@@ -91,13 +94,19 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req,
                                    HttpServletRequest request, HttpServletResponse response) {
+        if (loginAttemptService.isLocked(req.email())) {
+            return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of("error", "account_locked"));
+        }
+
         Authentication authRequest = new UsernamePasswordAuthenticationToken(req.email(), req.password());
         Authentication authResult;
         try {
             authResult = authenticationManager.authenticate(authRequest);
         } catch (AuthenticationException e) {
+            loginAttemptService.recordFailure(req.email());
             return ResponseEntity.status(401).body(Map.of("error", "invalid_credentials"));
         }
+        loginAttemptService.recordSuccess(req.email());
 
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authResult);

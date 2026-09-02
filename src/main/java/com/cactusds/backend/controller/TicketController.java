@@ -1,6 +1,7 @@
 package com.cactusds.backend.controller;
 
 import com.cactusds.backend.comon.notification.NotificationService;
+import com.cactusds.backend.dto.TicketPrioriteUpdateRequest;
 import com.cactusds.backend.dto.TicketReplyRequest;
 import com.cactusds.backend.dto.TicketRequest;
 import com.cactusds.backend.dto.TicketResponse;
@@ -70,6 +71,17 @@ public class TicketController {
                     ticket.setUpdatedAt(LocalDateTime.now());
                     ticketRepository.save(ticket);
                     notificationService.notifyTicketReply(ticket);
+                    return ResponseEntity.ok(TicketResponse.from(ticket));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+    @PatchMapping("/api/admin/tickets/{id}/priorite")
+    public ResponseEntity<TicketResponse> updatePriorite(@PathVariable Long id, @Valid @RequestBody TicketPrioriteUpdateRequest req) {
+        return ticketRepository.findById(id)
+                .map(ticket -> {
+                    ticket.setPriorite(req.priorite());
+                    ticket.setUpdatedAt(LocalDateTime.now());
+                    ticketRepository.save(ticket);
                     return ResponseEntity.ok(TicketResponse.from(ticket));
                 })
                 .orElse(ResponseEntity.notFound().build());

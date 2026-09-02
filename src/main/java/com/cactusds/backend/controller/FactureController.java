@@ -5,6 +5,7 @@ import com.cactusds.backend.comon.pdf.FacturePdfGenerator;
 import com.cactusds.backend.dto.FactureGenerateRequest;
 import com.cactusds.backend.dto.FactureResponse;
 import com.cactusds.backend.dto.FactureStatutUpdateRequest;
+import com.cactusds.backend.dto.PendingInvoiceGroupResponse;
 import com.cactusds.backend.model.Commande;
 import com.cactusds.backend.model.Facture;
 import com.cactusds.backend.model.User;
@@ -23,7 +24,13 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 public class FactureController {
@@ -51,6 +58,24 @@ public class FactureController {
         Facture facture = factureService.generateForPeriod(client, req.periodeDebut(), req.periodeFin());
         List<Commande> commandes = commandeRepository.findByFactureIdOrderByCreatedAtAsc(facture.getId());
         return ResponseEntity.status(201).body(FactureResponse.from(facture, commandes));
+    }
+    @GetMapping("/api/admin/factures/pending")
+    public List<PendingInvoiceGroupResponse> pendingInvoices() {
+        List<Commande> uninvoiced = commandeRepository.findByFactureIsNullOrderByUserIdAscDateDebutAsc();
+        Map<Long, List<Commande>> byUser = uninvoiced.stream()
+                .collect(Collectors.groupingBy(c -> c.getUser().getId(), LinkedHashMap::new, Collectors.toList()));
+
+        return byUser.values().stream()
+                .map(list -> {
+                    User client = list.get(0).getUser();
+                    BigDecimal total = list.stream().map(Commande::getPrixTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+                    LocalDate min = list.stream().map(Commande::getDateDebut).min(LocalDate::compareTo).orElse(null);
+                    LocalDate max = list.stream().map(Commande::getDateDebut).max(LocalDate::compareTo).orElse(null);
+                    return new PendingInvoiceGroupResponse(client.getId(), client.getEmail(), client.getFullName(),
+                            list.size(), total, min, max);
+                })
+                .sorted(Comparator.comparing(PendingInvoiceGroupResponse::montantTotal).reversed())
+                .toList();
     }
 
     @GetMapping("/api/admin/factures")

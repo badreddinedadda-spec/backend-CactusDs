@@ -9,4 +9,5 @@ public interface CommandeRepository extends JpaRepository<Commande, Long>{
     List<Commande> findByUserIdAndFactureIsNullAndDateDebutBetween(Long userId, LocalDate start, LocalDate end);
     List<Commande> findByFactureIdOrderByCreatedAtAsc(Long factureId);
     List<Commande> findByDateExpirationAndReminderSentFalse(LocalDate date);
+    List<Commande> findByFactureIsNullOrderByUserIdAscDateDebutAsc();
 }

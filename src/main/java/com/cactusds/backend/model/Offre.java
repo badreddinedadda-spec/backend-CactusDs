@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Entity @Table(name = "offres")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
@@ -52,6 +54,13 @@ public class Offre {
     @Builder.Default
     @Column(name = "ordre_affichage")
     private Integer ordreAffichage = 0;
+
+    @ElementCollection
+    @CollectionTable(name = "offre_specifications", joinColumns = @JoinColumn(name = "offre_id"))
+    @MapKeyColumn(name = "spec_key", length = 100)
+    @Column(name = "spec_value", length = 255)
+    @Builder.Default
+    private Map<String, String> specifications = new LinkedHashMap<>();
 
     @Builder.Default
     @Column(name = "created_at", updatable = false)

@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 
 @RestController
@@ -26,7 +27,6 @@ public class OffreController {
         this.categorieOffreRepository = categorieOffreRepository;
     }
 
-    // Public catalog — ?categorieId=X filters, omit it for everything active
     @GetMapping("/offres")
     public List<OffreResponse> listActive(@RequestParam(required = false) Long categorieId) {
         List<Offre> offres = categorieId != null
@@ -43,7 +43,6 @@ public class OffreController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Admin — sees inactive offers too, since managing them is the point
     @GetMapping("/admin/offres")
     public List<OffreResponse> listAllAdmin() {
         return offreRepository.findAll().stream().map(OffreResponse::from).toList();
@@ -67,6 +66,7 @@ public class OffreController {
                 .sslInclus(req.sslInclus() != null ? req.sslInclus() : false)
                 .actif(req.actif() != null ? req.actif() : true)
                 .ordreAffichage(req.ordreAffichage() != null ? req.ordreAffichage() : 0)
+                .specifications(req.specifications() != null ? req.specifications() : new LinkedHashMap<>())
                 .build();
 
         offreRepository.save(offre);
@@ -91,6 +91,7 @@ public class OffreController {
                     if (req.sslInclus() != null) offre.setSslInclus(req.sslInclus());
                     if (req.actif() != null) offre.setActif(req.actif());
                     if (req.ordreAffichage() != null) offre.setOrdreAffichage(req.ordreAffichage());
+                    if (req.specifications() != null) offre.setSpecifications(req.specifications());
                     offreRepository.save(offre);
                     return ResponseEntity.ok(OffreResponse.from(offre));
                 })

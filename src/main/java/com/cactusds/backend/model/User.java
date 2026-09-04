@@ -16,7 +16,7 @@ public class User {
     @Column(nullable = false, unique = true, length = 150)
     private String email;
 
-    private String passwordHash; // null for Google-only accounts
+    private String passwordHash;
 
     @Column(length = 150)
     private String fullName;
@@ -30,6 +30,10 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AuthProvider authProvider = AuthProvider.LOCAL;
+
+    @Builder.Default
+    @Column(name = "email_verified", nullable = false)
+    private Boolean emailVerified = false;
 
     @Builder.Default
     @Column(name = "created_at", updatable = false)

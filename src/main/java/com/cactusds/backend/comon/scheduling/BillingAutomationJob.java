@@ -28,7 +28,7 @@ public class BillingAutomationJob {
         this.notificationService = notificationService;
     }
 
-    @Scheduled(cron = "0 30 8 * * *") // every day at 08:30, right after ExpirationReminderJob
+    @Scheduled(cron = "0 30 8 * * *")
     public void relancerFacturesImpayees() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(RELANCE_APRES_JOURS);
         List<Facture> unpaid = factureRepository
@@ -40,7 +40,7 @@ public class BillingAutomationJob {
         }
     }
 
-    @Scheduled(cron = "0 45 8 * * *") // every day at 08:45
+    @Scheduled(cron = "0 45 8 * * *")
     public void suspendreServicesImpayes() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(SUSPENSION_APRES_JOURS);
         List<Facture> overdue = factureRepository.findByStatutAndDateEmissionBefore(Facture.Statut.EMISE, cutoff);

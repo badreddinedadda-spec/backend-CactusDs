@@ -1,25 +1,27 @@
 package com.cactusds.backend.controller;
 
-import com.cactusds.backend.comon.security.LoginAttemptService;
-import org.springframework.http.HttpStatus;
 import com.cactusds.backend.comon.notification.NotificationService;
+import com.cactusds.backend.comon.security.LoginAttemptService;
 import com.cactusds.backend.dto.ForgotPasswordRequest;
-import com.cactusds.backend.dto.ResetPasswordRequest;
-import com.cactusds.backend.model.PasswordResetToken;
-import com.cactusds.backend.repository.PasswordResetTokenRepository;
-import org.springframework.beans.factory.annotation.Value;
-import java.time.LocalDateTime;
-import java.util.UUID;
 import com.cactusds.backend.dto.LoginRequest;
 import com.cactusds.backend.dto.RegisterRequest;
+import com.cactusds.backend.dto.ResendVerificationRequest;
+import com.cactusds.backend.dto.ResetPasswordRequest;
 import com.cactusds.backend.dto.UserResponse;
+import com.cactusds.backend.dto.VerifyEmailRequest;
 import com.cactusds.backend.model.AuthProvider;
+import com.cactusds.backend.model.EmailVerificationToken;
+import com.cactusds.backend.model.PasswordResetToken;
 import com.cactusds.backend.model.Role;
 import com.cactusds.backend.model.User;
+import com.cactusds.backend.repository.EmailVerificationTokenRepository;
+import com.cactusds.backend.repository.PasswordResetTokenRepository;
 import com.cactusds.backend.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -36,7 +38,9 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.web.csrf.CsrfToken;
 
+import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -44,23 +48,27 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final NotificationService notificationService;
-    private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
     private final LoginAttemptService loginAttemptService;
+    private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
+
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
     public AuthController(UserRepository userRepository, PasswordResetTokenRepository passwordResetTokenRepository,
+                          EmailVerificationTokenRepository emailVerificationTokenRepository,
                           PasswordEncoder passwordEncoder, AuthenticationManager authenticationManager,
-                          NotificationService notificationService,LoginAttemptService loginAttemptService) {
+                          NotificationService notificationService, LoginAttemptService loginAttemptService) {
         this.userRepository = userRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.emailVerificationTokenRepository = emailVerificationTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.notificationService = notificationService;
-        this.loginAttemptService=loginAttemptService;
+        this.loginAttemptService = loginAttemptService;
     }
 
     @GetMapping("/me")
@@ -88,6 +96,7 @@ public class AuthController {
                 .authProvider(AuthProvider.LOCAL)
                 .build();
         userRepository.save(user);
+        sendVerificationEmail(user);
         return ResponseEntity.status(201).body(toResponse(user));
     }
 
@@ -117,31 +126,23 @@ public class AuthController {
         return ResponseEntity.ok(toResponse(user));
     }
 
-    private UserResponse toResponse(User user) {
-        return new UserResponse(user.getId(), user.getEmail(), user.getFullName(), user.getRole().name());
-    }
-
-    private String extractEmail(Authentication authentication) {
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof OAuth2User oAuth2User) {
-            return oAuth2User.getAttribute("email");
-        }
-        if (principal instanceof UserDetails userDetails) {
-            return userDetails.getUsername();
-        }
-        return authentication.getName();
-    }
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
         userRepository.findByEmail(req.email()).ifPresent(user -> {
-            if (user.getAuthProvider() != AuthProvider.LOCAL) return; // Google-only: nothing to reset
+            if (user.getAuthProvider() != AuthProvider.LOCAL) {
+                return;
+            }
             String token = UUID.randomUUID().toString();
             PasswordResetToken resetToken = PasswordResetToken.builder()
-                    .token(token).user(user).expiresAt(LocalDateTime.now().plusHours(1)).build();
+                    .token(token)
+                    .user(user)
+                    .expiresAt(LocalDateTime.now().plusHours(1))
+                    .build();
             passwordResetTokenRepository.save(resetToken);
-            notificationService.notifyPasswordReset(user, frontendUrl + "/hosting/reset-password?token=" + token);
+            String resetLink = frontendUrl + "/hosting/reset-password?token=" + token;
+            notificationService.notifyPasswordReset(user, resetLink);
         });
-        return ResponseEntity.ok(Map.of("status", "ok")); // always 200 — never reveals if the email exists
+        return ResponseEntity.ok(Map.of("status", "ok"));
     }
 
     @PostMapping("/reset-password")
@@ -157,9 +158,60 @@ public class AuthController {
         passwordResetTokenRepository.save(resetToken);
         return ResponseEntity.ok(Map.of("status", "ok"));
     }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<?> verifyEmail(@Valid @RequestBody VerifyEmailRequest req) {
+        EmailVerificationToken verifyToken = emailVerificationTokenRepository.findByToken(req.token()).orElse(null);
+        if (verifyToken == null || Boolean.TRUE.equals(verifyToken.getUsed()) || verifyToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+            return ResponseEntity.status(400).body(Map.of("error", "invalid_or_expired_token"));
+        }
+        User user = verifyToken.getUser();
+        user.setEmailVerified(true);
+        userRepository.save(user);
+        verifyToken.setUsed(true);
+        emailVerificationTokenRepository.save(verifyToken);
+        return ResponseEntity.ok(Map.of("status", "ok"));
+    }
+
+    @PostMapping("/resend-verification")
+    public ResponseEntity<?> resendVerification(@Valid @RequestBody ResendVerificationRequest req) {
+        userRepository.findByEmail(req.email())
+                .filter(user -> !Boolean.TRUE.equals(user.getEmailVerified()))
+                .ifPresent(this::sendVerificationEmail);
+        return ResponseEntity.ok(Map.of("status", "ok"));
+    }
+
+    private void sendVerificationEmail(User user) {
+        if (user.getAuthProvider() != AuthProvider.LOCAL || Boolean.TRUE.equals(user.getEmailVerified())) {
+            return;
+        }
+        String token = UUID.randomUUID().toString();
+        EmailVerificationToken verifyToken = EmailVerificationToken.builder()
+                .token(token)
+                .user(user)
+                .expiresAt(LocalDateTime.now().plusHours(24))
+                .build();
+        emailVerificationTokenRepository.save(verifyToken);
+        String verifyLink = frontendUrl + "/hosting/verify-email?token=" + token;
+        notificationService.notifyEmailVerification(user, verifyLink);
+    }
+
+    private UserResponse toResponse(User user) {
+        return new UserResponse(user.getId(), user.getEmail(), user.getFullName(), user.getRole().name(), user.getEmailVerified());
+    }
+
+    private String extractEmail(Authentication authentication) {
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof OAuth2User oAuth2User) {
+            return oAuth2User.getAttribute("email");
+        }
+        if (principal instanceof UserDetails userDetails) {
+            return userDetails.getUsername();
+        }
+        return authentication.getName();
+    }
     @GetMapping("/csrf")
     public void csrf(CsrfToken csrfToken) {
         csrfToken.getToken();
     }
-
 }

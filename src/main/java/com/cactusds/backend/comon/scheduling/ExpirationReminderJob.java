@@ -22,14 +22,24 @@ public class ExpirationReminderJob {
         this.notificationService = notificationService;
     }
 
-    @Scheduled(cron = "0 0 8 * * *") // every day at 08:00 server time
+    @Scheduled(cron = "0 0 8 * * *")
     public void sendReminders() {
         LocalDate target = LocalDate.now().plusDays(REMINDER_DAYS_BEFORE);
-        List<Commande> expiringSoon = commandeRepository.findByDateExpirationAndReminderSentFalse(target);
+        List<Commande> expiringSoon = commandeRepository.findByDateExpirationAndReminderSentFalse(target, Commande.Statut.ACTIVE);
         for (Commande commande : expiringSoon) {
             notificationService.notifyExpirationReminder(commande);
             commande.setReminderSent(true);
             commandeRepository.save(commande);
+        }
+    }
+
+    @Scheduled(cron = "0 15 8 * * *")
+    public void expireOverdueCommandes() {
+        List<Commande> overdue = commandeRepository.findByDateExpirationAndReminderSentFalse(LocalDate.now(), Commande.Statut.ACTIVE);
+        for (Commande commande : overdue) {
+            commande.setStatut(Commande.Statut.EXPIREE);
+            commandeRepository.save(commande);
+            notificationService.notifyServiceExpired(commande);
         }
     }
 }

@@ -33,6 +33,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
         user.setEmail(email);
         user.setFullName(name);
+        user.setEmailVerified(true); // Google has already verified this address
         if (isNewUser) {
             user.setRole(Role.CLIENT);
             user.setAuthProvider(AuthProvider.GOOGLE);

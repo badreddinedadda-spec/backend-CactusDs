@@ -1,6 +1,6 @@
 package com.cactusds.backend.controller;
 
-import com.cactusds.backend.comon.billing.FactureService;
+import com.cactusds.backend.comon.notification.NotificationService;
 import com.cactusds.backend.comon.pdf.FacturePdfGenerator;
 import com.cactusds.backend.dto.FactureGenerateRequest;
 import com.cactusds.backend.dto.FactureResponse;
@@ -12,6 +12,7 @@ import com.cactusds.backend.model.User;
 import com.cactusds.backend.repository.CommandeRepository;
 import com.cactusds.backend.repository.FactureRepository;
 import com.cactusds.backend.repository.UserRepository;
+import com.cactusds.backend.security.CurrentUserResolver;
 import jakarta.validation.Valid;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -19,8 +20,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -38,27 +37,55 @@ public class FactureController {
     private final CommandeRepository commandeRepository;
     private final UserRepository userRepository;
     private final FacturePdfGenerator pdfGenerator;
-    private final FactureService factureService;
+    private final NotificationService notificationService;
+    private final CurrentUserResolver currentUserResolver;
 
     public FactureController(FactureRepository factureRepository, CommandeRepository commandeRepository,
                              UserRepository userRepository, FacturePdfGenerator pdfGenerator,
-                             FactureService factureService) {
+                             NotificationService notificationService, CurrentUserResolver currentUserResolver) {
         this.factureRepository = factureRepository;
         this.commandeRepository = commandeRepository;
         this.userRepository = userRepository;
         this.pdfGenerator = pdfGenerator;
-        this.factureService = factureService;
+        this.notificationService = notificationService;
+        this.currentUserResolver = currentUserResolver;
     }
 
     @PostMapping("/api/admin/factures/generate")
     public ResponseEntity<FactureResponse> generate(@Valid @RequestBody FactureGenerateRequest req) {
+        if (req.periodeDebut().isAfter(req.periodeFin())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "periodeDebut must be before periodeFin");
+        }
         User client = userRepository.findById(req.userId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown userId"));
 
-        Facture facture = factureService.generateForPeriod(client, req.periodeDebut(), req.periodeFin());
-        List<Commande> commandes = commandeRepository.findByFactureIdOrderByCreatedAtAsc(facture.getId());
+        List<Commande> commandes = commandeRepository
+                .findByUserIdAndFactureIsNullAndDateDebutBetween(client.getId(), req.periodeDebut(), req.periodeFin());
+        if (commandes.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "No uninvoiced commandes found for this client in the given period");
+        }
+
+        BigDecimal total = commandes.stream()
+                .map(Commande::getPrixTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Facture facture = Facture.builder()
+                .numero(nextNumero())
+                .user(client)
+                .periodeDebut(req.periodeDebut())
+                .periodeFin(req.periodeFin())
+                .montantTotal(total)
+                .build();
+        factureRepository.save(facture);
+
+        commandes.forEach(c -> c.setFacture(facture));
+        commandeRepository.saveAll(commandes);
+        notificationService.notifyFactureGenerated(facture);
+
         return ResponseEntity.status(201).body(FactureResponse.from(facture, commandes));
     }
+
     @GetMapping("/api/admin/factures/pending")
     public List<PendingInvoiceGroupResponse> pendingInvoices() {
         List<Commande> uninvoiced = commandeRepository.findByFactureIsNullOrderByUserIdAscDateDebutAsc();
@@ -128,7 +155,7 @@ public class FactureController {
 
     @GetMapping("/api/client/factures")
     public List<FactureResponse> myFactures(Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserResolver.resolve(authentication);
         return factureRepository.findByUserIdOrderByDateEmissionDesc(user.getId()).stream()
                 .map(f -> FactureResponse.from(f, commandeRepository.findByFactureIdOrderByCreatedAtAsc(f.getId())))
                 .toList();
@@ -136,7 +163,7 @@ public class FactureController {
 
     @GetMapping("/api/client/factures/{id}/pdf")
     public ResponseEntity<byte[]> myFacturePdf(@PathVariable Long id, Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserResolver.resolve(authentication);
         Facture facture = factureRepository.findById(id)
                 .filter(f -> f.getUser().getId().equals(user.getId()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -154,20 +181,10 @@ public class FactureController {
         return new ResponseEntity<>(pdf, headers, HttpStatus.OK);
     }
 
-    private User currentUser(Authentication authentication) {
-        String email = extractEmail(authentication);
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
-    }
-
-    private String extractEmail(Authentication authentication) {
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof OAuth2User oAuth2User) {
-            return oAuth2User.getAttribute("email");
-        }
-        if (principal instanceof UserDetails userDetails) {
-            return userDetails.getUsername();
-        }
-        return authentication.getName();
+    private String nextNumero() {
+        int year = LocalDate.now().getYear();
+        String prefix = "FAC-" + year + "-";
+        long count = factureRepository.countByNumeroStartingWith(prefix);
+        return prefix + String.format("%04d", count + 1);
     }
 }

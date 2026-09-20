@@ -2,11 +2,13 @@ package com.cactusds.backend.controller;
 
 import com.cactusds.backend.comon.notification.NotificationService;
 import com.cactusds.backend.comon.security.LoginAttemptService;
+import com.cactusds.backend.comon.security.TwoFactorService;
 import com.cactusds.backend.dto.ForgotPasswordRequest;
 import com.cactusds.backend.dto.LoginRequest;
 import com.cactusds.backend.dto.RegisterRequest;
 import com.cactusds.backend.dto.ResendVerificationRequest;
 import com.cactusds.backend.dto.ResetPasswordRequest;
+import com.cactusds.backend.dto.Twofactorverifyrequest;
 import com.cactusds.backend.dto.UserResponse;
 import com.cactusds.backend.dto.VerifyEmailRequest;
 import com.cactusds.backend.model.AuthProvider;
@@ -29,6 +31,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,6 +42,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.security.web.csrf.CsrfToken;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -53,6 +57,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final NotificationService notificationService;
     private final LoginAttemptService loginAttemptService;
+    private final TwoFactorService twoFactorService;
     private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
 
     @Value("${app.frontend-url}")
@@ -61,7 +66,8 @@ public class AuthController {
     public AuthController(UserRepository userRepository, PasswordResetTokenRepository passwordResetTokenRepository,
                           EmailVerificationTokenRepository emailVerificationTokenRepository,
                           PasswordEncoder passwordEncoder, AuthenticationManager authenticationManager,
-                          NotificationService notificationService, LoginAttemptService loginAttemptService) {
+                          NotificationService notificationService, LoginAttemptService loginAttemptService,
+                          TwoFactorService twoFactorService) {
         this.userRepository = userRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
@@ -69,6 +75,7 @@ public class AuthController {
         this.authenticationManager = authenticationManager;
         this.notificationService = notificationService;
         this.loginAttemptService = loginAttemptService;
+        this.twoFactorService = twoFactorService;
     }
 
     @GetMapping("/me")
@@ -117,13 +124,65 @@ public class AuthController {
         }
         loginAttemptService.recordSuccess(req.email());
 
+        User user = userRepository.findByEmail(req.email()).orElseThrow();
+        if (twoFactorService.isEnabled(user)) {
+            // Password is correct, but the session stays anonymous until the second factor is
+            // verified (POST /api/auth/2fa/verify). Nothing authenticated is stored yet.
+            twoFactorService.startPendingLogin(request, user);
+            return ResponseEntity.ok(Map.of("twoFactorRequired", true));
+        }
+
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authResult);
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
 
-        User user = userRepository.findByEmail(req.email()).orElseThrow();
         return ResponseEntity.ok(toResponse(user));
+    }
+
+    /** Login step 2 (only for accounts with 2FA on): a 6-digit code, or one recovery code. */
+    @PostMapping("/2fa/verify")
+    public ResponseEntity<?> verifyTwoFactor(@RequestBody Twofactorverifyrequest req,
+                                             HttpServletRequest request, HttpServletResponse response) {
+        Long userId = twoFactorService.pendingUserId(request).orElse(null);
+        User user = userId == null ? null : userRepository.findById(userId).orElse(null);
+        if (user == null || !twoFactorService.isEnabled(user)) {
+            twoFactorService.clearPending(request);
+            return ResponseEntity.status(401).body(Map.of("error", "no_pending_login"));
+        }
+
+        TwoFactorService.VerifyResult result =
+                twoFactorService.verifyLoginChallenge(user, req.code(), req.recoveryCode());
+        if (result == TwoFactorService.VerifyResult.LOCKED) {
+            return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of("error", "account_locked"));
+        }
+        if (result != TwoFactorService.VerifyResult.OK) {
+            return ResponseEntity.status(401).body(Map.of("error", "invalid_code"));
+        }
+
+        twoFactorService.clearPending(request);
+        completeLogin(user, request, response);
+        return ResponseEntity.ok(toResponse(user));
+    }
+
+    /**
+     * Opens the authenticated session once every factor has been verified. The session id is
+     * rotated at this exact moment (privilege change) to prevent session fixation.
+     */
+    private void completeLogin(User user, HttpServletRequest request, HttpServletResponse response) {
+        org.springframework.security.core.userdetails.User principal =
+                new org.springframework.security.core.userdetails.User(
+                        user.getEmail(), "", List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
+        Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal, null, principal.getAuthorities());
+
+        request.getSession(true);
+        request.changeSessionId();
+
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+        securityContextRepository.saveContext(context, request, response);
     }
 
     @PostMapping("/forgot-password")

@@ -163,8 +163,6 @@ class TwoFactorServiceTest {
         assertFalse(service.isEnabled(user));
     }
 
-    // ---- pending login (session state) ----
-
     private static HttpServletRequest requestWithSession(Map<String, Object> attrs) {
         HttpSession session = (HttpSession) Proxy.newProxyInstance(
                 HttpSession.class.getClassLoader(), new Class[]{HttpSession.class},

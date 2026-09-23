@@ -16,13 +16,16 @@ import java.io.IOException;
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
     private final UserRepository userRepository;
     private final TwoFactorService twoFactorService;
+    private final UserSessionService userSessionService;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    public OAuth2LoginSuccessHandler(UserRepository userRepository, TwoFactorService twoFactorService) {
+    public OAuth2LoginSuccessHandler(UserRepository userRepository, TwoFactorService twoFactorService,
+                                     UserSessionService userSessionService) {
         this.userRepository = userRepository;
         this.twoFactorService = twoFactorService;
+        this.userSessionService = userSessionService;
     }
 
     @Override
@@ -32,12 +35,13 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
                 ? oAuth2User.getAttribute("email") : null;
         User user = email == null ? null : userRepository.findByEmail(email).orElse(null);
 
-        // Google login must not bypass 2FA: an account with 2FA on stays anonymous until the
-        // code is verified. This also drops the authenticated context Spring just stored.
         if (user != null && twoFactorService.isEnabled(user)) {
             twoFactorService.startPendingLogin(request, user);
             response.sendRedirect(frontendUrl + "/hosting/login?twofa=1");
             return;
+        }
+        if (user != null) {
+            userSessionService.recordLogin(request, user);
         }
         response.sendRedirect(frontendUrl);
     }

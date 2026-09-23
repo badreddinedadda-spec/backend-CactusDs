@@ -18,6 +18,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import com.cactusds.backend.comon.security.CustomOAuth2UserService;
 import com.cactusds.backend.comon.security.OAuth2LoginSuccessHandler;
 import com.cactusds.backend.comon.security.RestAuthenticationEntryPoint;
+import com.cactusds.backend.comon.security.SessionRevocationFilter;
+import com.cactusds.backend.comon.security.UserSessionService;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.util.List;
 
@@ -27,15 +30,21 @@ public class SecurityConfig {
     private final CustomOAuth2UserService customOAuth2UserService;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
+    private final SessionRevocationFilter sessionRevocationFilter;
+    private final UserSessionService userSessionService;
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
     public SecurityConfig(CustomOAuth2UserService customOAuth2UserService,
                           OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
-                          RestAuthenticationEntryPoint restAuthenticationEntryPoint) {
+                          RestAuthenticationEntryPoint restAuthenticationEntryPoint,
+                          SessionRevocationFilter sessionRevocationFilter,
+                          UserSessionService userSessionService) {
         this.customOAuth2UserService = customOAuth2UserService;
         this.oAuth2LoginSuccessHandler = oAuth2LoginSuccessHandler;
         this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
+        this.sessionRevocationFilter = sessionRevocationFilter;
+        this.userSessionService = userSessionService;
     }
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -55,8 +64,10 @@ public class SecurityConfig {
                         .successHandler(oAuth2LoginSuccessHandler)
                 )
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(restAuthenticationEntryPoint))
+                .addFilterBefore(sessionRevocationFilter, UsernamePasswordAuthenticationFilter.class)
                 .logout(logout -> logout
                         .logoutUrl("/api/auth/logout")
+                        .addLogoutHandler((req, res, auth) -> userSessionService.endSession(req.getRequestedSessionId()))
                         .logoutSuccessHandler((req, res, auth) -> res.setStatus(204))
                 );
         return http.build();

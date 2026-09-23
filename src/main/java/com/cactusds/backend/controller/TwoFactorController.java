@@ -1,8 +1,8 @@
 package com.cactusds.backend.controller;
 
 import com.cactusds.backend.comon.security.TwoFactorService;
-import com.cactusds.backend.dto.Twofactorcoderequest;
-import com.cactusds.backend.dto.Twofactordisablerequest;
+import com.cactusds.backend.dto.TwoFactorCodeRequest;
+import com.cactusds.backend.dto.TwoFactorDisableRequest;
 import com.cactusds.backend.model.User;
 import com.cactusds.backend.security.CurrentUserResolver;
 import jakarta.validation.Valid;
@@ -25,7 +25,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/client/2fa")
 public class TwoFactorController {
-
     private final CurrentUserResolver currentUserResolver;
     private final TwoFactorService twoFactorService;
 
@@ -57,7 +56,7 @@ public class TwoFactorController {
 
     /** Step 2: the user types the first code; 2FA only turns on if it is correct. */
     @PostMapping("/enable")
-    public ResponseEntity<?> enable(@Valid @RequestBody Twofactorcoderequest req, Authentication authentication) {
+    public ResponseEntity<?> enable(@Valid @RequestBody TwoFactorCodeRequest req, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         if (twoFactorService.isEnabled(user)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "already_enabled"));
@@ -76,7 +75,7 @@ public class TwoFactorController {
     }
 
     @PostMapping("/disable")
-    public ResponseEntity<?> disable(@RequestBody Twofactordisablerequest req, Authentication authentication) {
+    public ResponseEntity<?> disable(@RequestBody TwoFactorDisableRequest req, Authentication authentication) {
         User user = currentUserResolver.resolve(authentication);
         if (!twoFactorService.isEnabled(user)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "not_enabled"));

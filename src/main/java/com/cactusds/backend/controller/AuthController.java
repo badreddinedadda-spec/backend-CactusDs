@@ -3,12 +3,13 @@ package com.cactusds.backend.controller;
 import com.cactusds.backend.comon.notification.NotificationService;
 import com.cactusds.backend.comon.security.LoginAttemptService;
 import com.cactusds.backend.comon.security.TwoFactorService;
+import com.cactusds.backend.comon.security.UserSessionService;
 import com.cactusds.backend.dto.ForgotPasswordRequest;
 import com.cactusds.backend.dto.LoginRequest;
 import com.cactusds.backend.dto.RegisterRequest;
 import com.cactusds.backend.dto.ResendVerificationRequest;
 import com.cactusds.backend.dto.ResetPasswordRequest;
-import com.cactusds.backend.dto.Twofactorverifyrequest;
+import com.cactusds.backend.dto.TwoFactorVerifyRequest;
 import com.cactusds.backend.dto.UserResponse;
 import com.cactusds.backend.dto.VerifyEmailRequest;
 import com.cactusds.backend.model.AuthProvider;
@@ -58,6 +59,7 @@ public class AuthController {
     private final NotificationService notificationService;
     private final LoginAttemptService loginAttemptService;
     private final TwoFactorService twoFactorService;
+    private final UserSessionService userSessionService;
     private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
 
     @Value("${app.frontend-url}")
@@ -67,7 +69,7 @@ public class AuthController {
                           EmailVerificationTokenRepository emailVerificationTokenRepository,
                           PasswordEncoder passwordEncoder, AuthenticationManager authenticationManager,
                           NotificationService notificationService, LoginAttemptService loginAttemptService,
-                          TwoFactorService twoFactorService) {
+                          TwoFactorService twoFactorService, UserSessionService userSessionService) {
         this.userRepository = userRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
@@ -76,6 +78,7 @@ public class AuthController {
         this.notificationService = notificationService;
         this.loginAttemptService = loginAttemptService;
         this.twoFactorService = twoFactorService;
+        this.userSessionService = userSessionService;
     }
 
     @GetMapping("/me")
@@ -136,13 +139,14 @@ public class AuthController {
         context.setAuthentication(authResult);
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
+        userSessionService.recordLogin(request, user);
 
         return ResponseEntity.ok(toResponse(user));
     }
 
     /** Login step 2 (only for accounts with 2FA on): a 6-digit code, or one recovery code. */
     @PostMapping("/2fa/verify")
-    public ResponseEntity<?> verifyTwoFactor(@RequestBody Twofactorverifyrequest req,
+    public ResponseEntity<?> verifyTwoFactor(@RequestBody TwoFactorVerifyRequest req,
                                              HttpServletRequest request, HttpServletResponse response) {
         Long userId = twoFactorService.pendingUserId(request).orElse(null);
         User user = userId == null ? null : userRepository.findById(userId).orElse(null);
@@ -183,6 +187,7 @@ public class AuthController {
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
+        userSessionService.recordLogin(request, user);
     }
 
     @PostMapping("/forgot-password")

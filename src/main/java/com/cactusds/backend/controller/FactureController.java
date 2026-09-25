@@ -2,6 +2,7 @@ package com.cactusds.backend.controller;
 
 import com.cactusds.backend.comon.notification.NotificationService;
 import com.cactusds.backend.comon.pdf.FacturePdfGenerator;
+import com.cactusds.backend.dto.BankTransferInfoResponse;
 import com.cactusds.backend.dto.FactureGenerateRequest;
 import com.cactusds.backend.dto.FactureResponse;
 import com.cactusds.backend.dto.FactureStatutUpdateRequest;
@@ -19,12 +20,14 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,6 +42,15 @@ public class FactureController {
     private final FacturePdfGenerator pdfGenerator;
     private final NotificationService notificationService;
     private final CurrentUserResolver currentUserResolver;
+
+    @Value("${app.payment.bank.name:}")
+    private String bankName;
+    @Value("${app.payment.bank.rib:}")
+    private String bankRib;
+    @Value("${app.payment.bank.iban:}")
+    private String bankIban;
+    @Value("${app.payment.bank.holder:}")
+    private String bankHolder;
 
     public FactureController(FactureRepository factureRepository, CommandeRepository commandeRepository,
                              UserRepository userRepository, FacturePdfGenerator pdfGenerator,
@@ -146,6 +158,31 @@ public class FactureController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    /**
+     * Manual "send a reminder now" action for the admin Relances screen. The daily
+     * BillingAutomationJob already reminds an unpaid invoice once automatically after 7 days
+     * (and suspends its active commandes after 15), but an admin may want to nudge a client
+     * sooner, e.g. right after a phone call. Unlike the automatic job, this can be called more
+     * than once: relanceEnvoyee is still set to true so the automatic job does not also send its
+     * own reminder the same week, but a repeated manual click here is a deliberate admin action,
+     * not a bug to guard against.
+     */
+    @PostMapping("/api/admin/factures/{id}/relancer")
+    public ResponseEntity<FactureResponse> sendReminder(@PathVariable Long id) {
+        Facture facture = factureRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (facture.getStatut() != Facture.Statut.EMISE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only an unpaid (EMISE) invoice can be reminded");
+        }
+        notificationService.notifyFactureOverdueReminder(facture);
+        facture.setRelanceEnvoyee(true);
+        factureRepository.save(facture);
+
+        List<Commande> commandes = commandeRepository.findByFactureIdOrderByCreatedAtAsc(id);
+        return ResponseEntity.ok(FactureResponse.from(facture, commandes));
+    }
+
     @GetMapping("/api/admin/factures/{id}/pdf")
     public ResponseEntity<byte[]> adminPdf(@PathVariable Long id) {
         Facture facture = factureRepository.findById(id)
@@ -159,6 +196,40 @@ public class FactureController {
         return factureRepository.findByUserIdOrderByDateEmissionDesc(user.getId()).stream()
                 .map(f -> FactureResponse.from(f, commandeRepository.findByFactureIdOrderByCreatedAtAsc(f.getId())))
                 .toList();
+    }
+
+    /** Bank details for the client "Payer" screen. {@code configured=false} until an admin fills
+     * in the BANK_* environment variables — the frontend then shows a "contact support" message
+     * instead of blank or fabricated numbers. */
+    @GetMapping("/api/client/paiement/virement")
+    public BankTransferInfoResponse bankTransferInfo() {
+        boolean configured = bankRib != null && !bankRib.isBlank();
+        return new BankTransferInfoResponse(configured, bankName, bankRib, bankIban, bankHolder);
+    }
+
+    /**
+     * The client clicks "J'ai effectué le virement" — this only RECORDS that claim and alerts the
+     * admin by email; it never changes {@code statut} itself. Only an admin confirming against the
+     * real bank statement (PUT /api/admin/factures/{id}/statut) marks an invoice PAYEE. Calling
+     * this a second time for the same invoice is a harmless no-op: the timestamp and the admin
+     * email are only ever set/sent once.
+     */
+    @PostMapping("/api/client/factures/{id}/declarer-paiement")
+    public ResponseEntity<FactureResponse> declarePaiement(@PathVariable Long id, Authentication authentication) {
+        User user = currentUserResolver.resolve(authentication);
+        Facture facture = factureRepository.findById(id)
+                .filter(f -> f.getUser().getId().equals(user.getId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (facture.getStatut() != Facture.Statut.EMISE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This invoice is not awaiting payment");
+        }
+        if (facture.getPaiementDeclareAt() == null) {
+            facture.setPaiementDeclareAt(LocalDateTime.now());
+            factureRepository.save(facture);
+            notificationService.notifyPaiementDeclare(facture);
+        }
+        List<Commande> commandes = commandeRepository.findByFactureIdOrderByCreatedAtAsc(id);
+        return ResponseEntity.ok(FactureResponse.from(facture, commandes));
     }
 
     @GetMapping("/api/client/factures/{id}/pdf")

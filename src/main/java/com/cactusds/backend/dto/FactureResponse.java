@@ -9,7 +9,7 @@ import java.util.List;
 public record FactureResponse(Long id, String numero, String clientEmail, String clientNom,
                               LocalDate periodeDebut, LocalDate periodeFin,
                               BigDecimal montantTotal, String statut, LocalDateTime dateEmission,
-                              Boolean relanceEnvoyee, List<Ligne> lignes) {
+                              Boolean relanceEnvoyee, LocalDateTime paiementDeclareAt, List<Ligne> lignes) {
 
     public record Ligne(Long commandeId, String offreNom, String duree, BigDecimal prixTotal) {}
 
@@ -20,7 +20,7 @@ public record FactureResponse(Long id, String numero, String clientEmail, String
         return new FactureResponse(
                 f.getId(), f.getNumero(), f.getUser().getEmail(), f.getUser().getFullName(),
                 f.getPeriodeDebut(), f.getPeriodeFin(), f.getMontantTotal(), f.getStatut().name(),
-                f.getDateEmission(), f.getRelanceEnvoyee(), lignes
+                f.getDateEmission(), f.getRelanceEnvoyee(), f.getPaiementDeclareAt(), lignes
         );
     }
 }

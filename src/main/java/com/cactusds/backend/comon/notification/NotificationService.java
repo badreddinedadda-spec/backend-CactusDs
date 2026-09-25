@@ -24,8 +24,20 @@ public class NotificationService {
     @Value("${app.mail.from}")
     private String from;
 
+    @Value("${app.notifications.admin-email:}")
+    private String adminEmailOverride;
+
+    @Value("${app.company.email}")
+    private String companyEmail;
+
     public NotificationService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
+    }
+
+    /** Where internal "something needs your attention" alerts go: a dedicated inbox if one was
+     * configured, otherwise the company's own contact address. */
+    private String adminEmail() {
+        return (adminEmailOverride != null && !adminEmailOverride.isBlank()) ? adminEmailOverride : companyEmail;
     }
 
     public void notifyTicketReply(Ticket ticket) {
@@ -96,6 +108,21 @@ public class NotificationService {
                 + "Merci de régulariser votre situation depuis votre espace client afin d'éviter une suspension de vos services.\n\n"
                 + "L'équipe CactusDS";
         send(facture.getUser().getEmail(), "Rappel : facture " + facture.getNumero() + " impayée", body);
+    }
+
+    /**
+     * The client only CLAIMED to have paid by bank transfer; this does not mean the money has
+     * actually arrived. The admin must check the real bank statement before marking the invoice
+     * PAYEE in the admin Facturation screen — this email is a prompt to do that, not proof.
+     */
+    public void notifyPaiementDeclare(Facture facture) {
+        String clientName = facture.getUser().getFullName() != null ? facture.getUser().getFullName() : facture.getUser().getEmail();
+        String body = "Le client " + clientName + " (" + facture.getUser().getEmail() + ") indique avoir réglé "
+                + "la facture " + facture.getNumero() + " (" + facture.getMontantTotal() + " MAD) par virement bancaire.\n\n"
+                + "Vérifiez la réception du virement sur le relevé bancaire avant de marquer cette facture "
+                + "comme payée dans l'espace admin — cette déclaration client n'est pas une preuve de paiement.\n\n"
+                + "CactusDS";
+        send(adminEmail(), "Virement déclaré : facture " + facture.getNumero(), body);
     }
 
     public void notifyCommandeSuspended(Commande commande) {

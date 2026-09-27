@@ -1,7 +1,11 @@
 package com.cactusds.backend.controller;
 
 import com.cactusds.backend.dto.AdminUserResponse;
+import com.cactusds.backend.dto.NoteInterneRequest;
+import com.cactusds.backend.dto.NoteInterneResponse;
 import com.cactusds.backend.dto.RoleUpdateRequest;
+import com.cactusds.backend.model.NoteInterne;
+import com.cactusds.backend.repository.NoteInterneRepository;
 import com.cactusds.backend.model.Role;
 import com.cactusds.backend.model.User;
 import com.cactusds.backend.repository.UserRepository;
@@ -21,10 +25,13 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final CurrentUserResolver currentUserResolver;
+    private final NoteInterneRepository noteInterneRepository;
 
-    public UserController(UserRepository userRepository, CurrentUserResolver currentUserResolver) {
+    public UserController(UserRepository userRepository, CurrentUserResolver currentUserResolver,
+                          NoteInterneRepository noteInterneRepository) {
         this.userRepository = userRepository;
         this.currentUserResolver = currentUserResolver;
+        this.noteInterneRepository = noteInterneRepository;
     }
 
     @GetMapping
@@ -37,6 +44,25 @@ public class UserController {
         return userRepository.findById(id)
                 .map(u -> ResponseEntity.ok(AdminUserResponse.from(u)))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/notes")
+    public List<NoteInterneResponse> listNotes(@PathVariable Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        return noteInterneRepository.findByUser_IdOrderByCreatedAtDesc(id).stream()
+                .map(NoteInterneResponse::from).toList();
+    }
+
+    @PostMapping("/{id}/notes")
+    public ResponseEntity<NoteInterneResponse> addNote(@PathVariable Long id, @Valid @RequestBody NoteInterneRequest req,
+                                                       Authentication authentication) {
+        User client = userRepository.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        User admin = currentUserResolver.resolve(authentication);
+        NoteInterne note = NoteInterne.builder().user(client).auteur(admin).contenu(req.contenu().trim()).build();
+        noteInterneRepository.save(note);
+        return ResponseEntity.status(HttpStatus.CREATED).body(NoteInterneResponse.from(note));
     }
 
     @PutMapping("/{id}/role")

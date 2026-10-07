@@ -3,7 +3,9 @@ package com.cactusds.backend.comon.monitoring;
 import com.cactusds.backend.dto.ServiceMetricsResponse;
 import com.cactusds.backend.model.CategorieOffre;
 import com.cactusds.backend.model.Commande;
+import com.cactusds.backend.model.ServiceMonitoringTarget;
 import com.cactusds.backend.repository.CommandeRepository;
+import com.cactusds.backend.repository.ServiceMonitoringTargetRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,20 +25,23 @@ public class ServiceMetricsService {
     }
 
     private final CommandeRepository commandeRepository;
+    private final ServiceMonitoringTargetRepository targetRepository;
     private final MetricsAgentClient agentClient;
     private final MonitoringProperties props;
     private final Clock clock;
     private final ConcurrentHashMap<Long, Cached> cache = new ConcurrentHashMap<>();
 
     @Autowired
-    public ServiceMetricsService(CommandeRepository commandeRepository, MetricsAgentClient agentClient,
-                                 MonitoringProperties props) {
-        this(commandeRepository, agentClient, props, Clock.systemUTC());
+    public ServiceMetricsService(CommandeRepository commandeRepository,
+                                 ServiceMonitoringTargetRepository targetRepository,
+                                 MetricsAgentClient agentClient, MonitoringProperties props) {
+        this(commandeRepository, targetRepository, agentClient, props, Clock.systemUTC());
     }
 
-    ServiceMetricsService(CommandeRepository commandeRepository, MetricsAgentClient agentClient,
-                          MonitoringProperties props, Clock clock) {
+    ServiceMetricsService(CommandeRepository commandeRepository, ServiceMonitoringTargetRepository targetRepository,
+                          MetricsAgentClient agentClient, MonitoringProperties props, Clock clock) {
         this.commandeRepository = commandeRepository;
+        this.targetRepository = targetRepository;
         this.agentClient = agentClient;
         this.props = props;
         this.clock = clock;
@@ -47,8 +52,8 @@ public class ServiceMetricsService {
         if (owned.isEmpty() || !isMonitorable(owned.get())) {
             return MetricsResult.notFound();
         }
-        String base = props.getAgents().get(commandeId);
-        if (base == null || base.isBlank()) {
+        Optional<String> agentUrl = agentUrlFor(commandeId);
+        if (agentUrl.isEmpty()) {
             return MetricsResult.notFound();
         }
 
@@ -58,7 +63,7 @@ public class ServiceMetricsService {
             return MetricsResult.live(hit.snapshot());
         }
         try {
-            ServiceMetricsResponse fresh = agentClient.fetch(URI.create(base.trim()));
+            ServiceMetricsResponse fresh = agentClient.fetch(URI.create(agentUrl.get()));
             cache.put(commandeId, new Cached(fresh, now));
             return MetricsResult.live(fresh);
         } catch (AgentUnreachableException | InvalidAgentPayloadException e) {
@@ -66,6 +71,17 @@ public class ServiceMetricsService {
             return MetricsResult.unreachable();
         }
     }
+
+    /** Database row wins (enabled or not); application.properties is only a bootstrap fallback when there is no row. */
+    private Optional<String> agentUrlFor(Long commandeId) {
+        Optional<ServiceMonitoringTarget> target = targetRepository.findByCommandeId(commandeId);
+        if (target.isPresent()) {
+            return Boolean.TRUE.equals(target.get().getEnabled()) ? Optional.of(target.get().getAgentUrl()) : Optional.empty();
+        }
+        String fallback = props.getAgents().get(commandeId);
+        return fallback == null || fallback.isBlank() ? Optional.empty() : Optional.of(fallback.trim());
+    }
+
     static boolean isMonitorable(Commande c) {
         boolean statusOk = c.getStatut() == Commande.Statut.ACTIVE || c.getStatut() == Commande.Statut.SUSPENDUE;
         boolean cloud = c.getOffre() != null

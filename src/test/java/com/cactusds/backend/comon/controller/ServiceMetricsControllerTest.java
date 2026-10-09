@@ -1,7 +1,8 @@
-package com.cactusds.backend.controller;
+package com.cactusds.backend.comon.controller;
 
 import com.cactusds.backend.comon.monitoring.MetricsResult;
 import com.cactusds.backend.comon.monitoring.ServiceMetricsService;
+import com.cactusds.backend.controller.ServiceMetricsController;
 import com.cactusds.backend.dto.ServiceMetricsResponse;
 import com.cactusds.backend.model.User;
 import com.cactusds.backend.security.CurrentUserResolver;

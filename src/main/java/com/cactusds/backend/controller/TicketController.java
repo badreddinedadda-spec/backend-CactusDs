@@ -1,13 +1,12 @@
 package com.cactusds.backend.controller;
 
 import com.cactusds.backend.comon.notification.NotificationService;
-import com.cactusds.backend.dto.TicketReplyRequest;
-import com.cactusds.backend.dto.TicketPrioriteUpdateRequest;
-import com.cactusds.backend.dto.TicketRequest;
-import com.cactusds.backend.dto.TicketResponse;
+import com.cactusds.backend.dto.*;
 import com.cactusds.backend.model.Ticket;
+import com.cactusds.backend.model.TicketMessage;
 import com.cactusds.backend.model.User;
 import com.cactusds.backend.repository.TicketRepository;
+import com.cactusds.backend.comon.ticket.TicketThreadService;
 import com.cactusds.backend.security.CurrentUserResolver;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -25,25 +24,42 @@ public class TicketController {
     private final TicketRepository ticketRepository;
     private final NotificationService notificationService;
     private final CurrentUserResolver currentUserResolver;
-
-    public TicketController(TicketRepository ticketRepository, NotificationService notificationService, CurrentUserResolver currentUserResolver) {
+    private final TicketThreadService threadService;
+    public TicketController(TicketRepository ticketRepository, NotificationService notificationService, CurrentUserResolver currentUserResolver
+    , TicketThreadService threadService) {
         this.ticketRepository = ticketRepository;
         this.notificationService = notificationService;
         this.currentUserResolver = currentUserResolver;
+        this.threadService = threadService;
     }
 
     @PostMapping("/api/client/tickets")
-    public ResponseEntity<TicketResponse> create(@Valid @RequestBody TicketRequest req, Authentication authentication) {
+    public ResponseEntity<TicketResponse> create(
+            @Valid @RequestBody TicketRequest req,
+            Authentication authentication) {
+
         User user = currentUserResolver.resolve(authentication);
+
         Ticket ticket = Ticket.builder()
                 .user(user)
-                .categorie(req.categorie() != null ? req.categorie() : Ticket.Categorie.GENERAL)
+                .categorie(req.categorie() != null
+                        ? req.categorie()
+                        : Ticket.Categorie.GENERAL)
                 .sujet(req.sujet())
                 .message(req.message())
-                .priorite(req.priorite() != null ? req.priorite() : Ticket.Priorite.NORMALE)
+                .priorite(req.priorite() != null
+                        ? req.priorite()
+                        : Ticket.Priorite.NORMALE)
+                .statut(Ticket.Statut.OUVERT)
                 .build();
-        ticketRepository.save(ticket);
-        return ResponseEntity.status(201).body(TicketResponse.from(ticket));
+
+        Ticket saved = ticketRepository.save(ticket);
+
+        notificationService.notifyTicketClientReply(
+                saved, saved.getMessage());
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(TicketResponse.from(saved));
     }
 
     @GetMapping("/api/client/tickets")
@@ -65,6 +81,7 @@ public class TicketController {
     public ResponseEntity<TicketResponse> reply(@PathVariable Long id, @Valid @RequestBody TicketReplyRequest req) {
         return ticketRepository.findById(id)
                 .map(ticket -> {
+                    threadService.appendSupportMessage(ticket, req.reponseAdmin());
                     ticket.setReponseAdmin(req.reponseAdmin());
                     ticket.setStatut(req.statut() != null ? req.statut() : Ticket.Statut.RESOLU);
                     if (req.priorite() != null) {

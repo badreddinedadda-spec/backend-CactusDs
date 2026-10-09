@@ -34,8 +34,6 @@ public class NotificationService {
         this.mailSender = mailSender;
     }
 
-    /** Where internal "something needs your attention" alerts go: a dedicated inbox if one was
-     * configured, otherwise the company's own contact address. */
     private String adminEmail() {
         return (adminEmailOverride != null && !adminEmailOverride.isBlank()) ? adminEmailOverride : companyEmail;
     }
@@ -110,11 +108,6 @@ public class NotificationService {
         send(facture.getUser().getEmail(), "Rappel : facture " + facture.getNumero() + " impayée", body);
     }
 
-    /**
-     * The client only CLAIMED to have paid by bank transfer; this does not mean the money has
-     * actually arrived. The admin must check the real bank statement before marking the invoice
-     * PAYEE in the admin Facturation screen — this email is a prompt to do that, not proof.
-     */
     public void notifyPaiementDeclare(Facture facture) {
         String clientName = facture.getUser().getFullName() != null ? facture.getUser().getFullName() : facture.getUser().getEmail();
         String body = "Le client " + clientName + " (" + facture.getUser().getEmail() + ") indique avoir réglé "
@@ -132,6 +125,17 @@ public class NotificationService {
                 + "Contactez-nous ou réglez votre facture depuis votre espace client pour le réactiver.\n\n"
                 + "L'équipe CactusDS";
         send(commande.getUser().getEmail(), "Votre service a été suspendu", body);
+    }
+    public void notifyTicketClientReply(Ticket ticket, String clientMessage) {
+        String clientName = ticket.getUser().getFullName() != null ? ticket.getUser().getFullName() : ticket.getUser().getEmail();
+        String excerpt = clientMessage.length() > 1000 ? clientMessage.substring(0, 1000) + "…" : clientMessage;
+        String body = "Le client " + clientName + " (" + ticket.getUser().getEmail() + ") a répondu au ticket \""
+                + ticket.getSujet() + "\" (#" + ticket.getId() + ") :\n\n"
+                + excerpt + "\n\n"
+                + "Statut actuel : " + ticket.getStatut().name() + "\n\n"
+                + "Répondez depuis l'espace admin.\n\n"
+                + "CactusDS";
+        send(adminEmail(), "Nouveau message client : " + ticket.getSujet(), body);
     }
 
     private void send(String to, String subject, String body) {

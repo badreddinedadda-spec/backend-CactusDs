@@ -8,27 +8,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * All the "Sessions" screen business rules live here; the filter and the controller stay thin.
- *
- * How revocation actually works: ending someone else's session cannot call {@code .invalidate()}
- * on it directly — that HttpSession object lives on a different device/request and Java gives no
- * handle to reach across processes to it. Instead {@link #revoke} only flips a {@code revoked}
- * flag in the database; {@link SessionRevocationFilter} checks that flag on every request and
- * force-ends the session the next time that device is used. The row is kept (not deleted) so the
- * filter can still find it.
- */
 @Service
 public class UserSessionService {
-
-    /** How often {@link #touch} is allowed to write, so an active browser tab doesn't hit the
-     * database on every single request. */
     static final Duration TOUCH_THROTTLE = Duration.ofSeconds(60);
 
     public enum RevokeResult { OK, NOT_FOUND, IS_CURRENT_SESSION }
@@ -41,7 +30,6 @@ public class UserSessionService {
         this.repository = repository;
         this.sessionTimeout = sessionTimeout;
     }
-    /** Called once, right after a login fully succeeds (password, 2FA, or Google). */
     public void recordLogin(HttpServletRequest request, User user) {
         HttpSession session = request.getSession(false);
         if (session == null) {
@@ -60,7 +48,6 @@ public class UserSessionService {
         repository.save(row);
     }
 
-    /** Called on every authenticated request; writes at most once per {@link #TOUCH_THROTTLE}. */
     public void touch(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session == null) {
@@ -75,7 +62,6 @@ public class UserSessionService {
         });
     }
 
-    /** True if this session's row is marked revoked — the filter must then force it out. */
     public boolean isRevoked(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session == null) {
@@ -84,8 +70,7 @@ public class UserSessionService {
         String hash = SessionFingerPrint.hash(session.getId());
         return repository.findBySessionIdHash(hash).map(UserSession::getRevoked).orElse(false);
     }
-
-    /** Called from the logout handler with {@code request.getRequestedSessionId()}. */
+    @Transactional
     public void endSession(String rawSessionId) {
         if (rawSessionId == null) {
             return;
@@ -108,9 +93,6 @@ public class UserSessionService {
                 .toList();
     }
 
-    /** Ends another one of the user's own sessions. Refuses to end the caller's current one —
-     * that is what the "Log out" button is for, and doing it here would 401 the very request
-     * asking for it. */
     public RevokeResult revoke(User user, Long sessionRowId, HttpServletRequest request) {
         Optional<UserSession> found = repository.findByIdAndUser_Id(sessionRowId, user.getId());
         if (found.isEmpty()) {
@@ -139,9 +121,6 @@ public class UserSessionService {
         return session == null ? null : SessionFingerPrint.hash(session.getId());
     }
 
-    /** X-Forwarded-For first, for when this later sits behind a reverse proxy or load balancer;
-     * falls back to the direct connection. Not signature-verified, so treat it as a hint for the
-     * "Sessions" screen, never as an access-control input. */
     private static String clientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {

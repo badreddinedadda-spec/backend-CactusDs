@@ -9,13 +9,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import com.cactusds.backend.comon.billing.BillingPolicy;
 import java.util.List;
 
 @Component
 public class BillingAutomationJob {
 
-    private static final int RELANCE_APRES_JOURS = 7;
-    private static final int SUSPENSION_APRES_JOURS = 15;
+    private static final int RELANCE_APRES_JOURS = BillingPolicy.PAYMENT_TERMS_DAYS;
+    private static final int SUSPENSION_APRES_JOURS = BillingPolicy.SUSPENSION_AFTER_DAYS;
 
     private final FactureRepository factureRepository;
     private final CommandeRepository commandeRepository;

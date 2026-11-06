@@ -16,6 +16,11 @@ import java.util.List;
 
 @Service
 public class CustomOAuth2UserService extends DefaultOAuth2UserService {
+    static void applyGoogleName(User user, String googleName) {
+        if (user.getFullName() == null || user.getFullName().isBlank()) {
+            user.setFullName(googleName);
+        }
+    }
     private final UserRepository userRepository;
 
     public CustomOAuth2UserService(UserRepository userRepository) {
@@ -32,7 +37,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         boolean isNewUser = user.getId() == null;
 
         user.setEmail(email);
-        user.setFullName(name);
+        applyGoogleName(user, name);
         user.setEmailVerified(true); // Google has already verified this address
         if (isNewUser) {
             user.setRole(Role.CLIENT);

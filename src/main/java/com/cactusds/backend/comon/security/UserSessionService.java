@@ -107,7 +107,15 @@ public class UserSessionService {
         repository.save(row);
         return RevokeResult.OK;
     }
-
+    public int revokeOthers(User user, HttpServletRequest request) {
+        String currentHash = currentSessionHash(request);
+        List<UserSession> others = repository.findByUser_IdAndRevokedFalseOrderByLastSeenAtDesc(user.getId()).stream()
+                .filter(row -> !row.getSessionIdHash().equals(currentHash))
+                .toList();
+        others.forEach(row -> row.setRevoked(true));
+        repository.saveAll(others);
+        return others.size();
+    }
     static boolean shouldTouch(LocalDateTime lastSeenAt, LocalDateTime now) {
         return lastSeenAt == null || Duration.between(lastSeenAt, now).compareTo(TOUCH_THROTTLE) >= 0;
     }

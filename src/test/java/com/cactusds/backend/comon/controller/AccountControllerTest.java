@@ -5,6 +5,9 @@ import com.cactusds.backend.dto.UserResponse;
 import com.cactusds.backend.model.User;
 import com.cactusds.backend.repository.UserRepository;
 import com.cactusds.backend.security.CurrentUserResolver;
+import com.cactusds.backend.comon.security.PasswordChangeService;
+import com.cactusds.backend.comon.security.PasswordChangeService.Result;
+import com.cactusds.backend.dto.ChangePasswordRequest;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,7 +54,7 @@ class AccountControllerTest {
                     }
                 });
         resolver = new CurrentUserResolver(repo);
-        controller = new AccountController(resolver, repo);
+        controller = new AccountController(resolver, repo, null);
     }
 
     private Authentication authAs(String email) {
@@ -87,6 +90,53 @@ class AccountControllerTest {
             assertTrue(v.validate(new UpdateProfileRequest(null)).size() > 0);
             assertTrue(v.validate(new UpdateProfileRequest("x".repeat(151))).size() > 0);
             assertFalse(v.validate(new UpdateProfileRequest("x".repeat(150))).size() > 0);
+        }
+    }
+
+    private ResponseEntity<?> changeWith(Result result) {
+        PasswordChangeService fixed = new PasswordChangeService(null, null, null, null, null, null) {
+            @Override
+            public Result change(User u, String cur, String next, String code, String recovery,
+                                 jakarta.servlet.http.HttpServletRequest request) {
+                return result;
+            }
+        };
+        AccountController c = new AccountController(resolver, repo, fixed);
+        return c.changePassword(new ChangePasswordRequest("a", "bbbbbbbb", null, null), authAs("me@cactusds.ma"), null);
+    }
+
+    private void assertMapped(Result result, int status, String error) {
+        ResponseEntity<?> res = changeWith(result);
+        assertEquals(status, res.getStatusCode().value());
+        assertEquals(error, ((java.util.Map<?, ?>) res.getBody()).get(error.equals("ok") ? "status" : "error"));
+    }
+
+    @Test
+    void passwordResultsMapToTheDocumentedStatusAndErrorCodes() {
+        assertMapped(Result.OK, 200, "ok");
+        assertMapped(Result.LOCKED, 423, "account_locked");
+        assertMapped(Result.NO_PASSWORD_ACCOUNT, 400, "no_password_account");
+        assertMapped(Result.WRONG_PASSWORD, 400, "invalid_current_password");
+        assertMapped(Result.SECOND_FACTOR_REQUIRED, 400, "second_factor_required");
+        assertMapped(Result.INVALID_CODE, 400, "invalid_code");
+        assertMapped(Result.SAME_PASSWORD, 400, "same_password");
+    }
+
+    @Test
+    void passwordErrorsAreNeverA401BecauseTheFrontendReadsThatAsSessionExpired() {
+        for (Result r : Result.values()) {
+            assertTrue(changeWith(r).getStatusCode().value() != 401, r.name());
+        }
+    }
+
+    @Test
+    void passwordRequestValidationEnforcesTheLengthBounds() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            Validator v = factory.getValidator();
+            assertTrue(v.validate(new ChangePasswordRequest("", "bbbbbbbb", null, null)).size() > 0);
+            assertTrue(v.validate(new ChangePasswordRequest("a", "short", null, null)).size() > 0);
+            assertTrue(v.validate(new ChangePasswordRequest("a", "x".repeat(73), null, null)).size() > 0);
+            assertFalse(v.validate(new ChangePasswordRequest("a", "x".repeat(72), null, null)).size() > 0);
         }
     }
 }

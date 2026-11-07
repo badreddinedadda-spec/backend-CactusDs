@@ -78,6 +78,16 @@ public class NotificationService {
                 + "L'équipe CactusDS";
         send(user.getEmail(), "Confirmez votre adresse email", body);
     }
+    public void notifyPasswordChanged(User user) {
+        String clientName = user.getFullName() != null ? user.getFullName() : user.getEmail();
+        String body = "Bonjour " + clientName + ",\n\n"
+                + "Le mot de passe de votre compte CactusDS vient d'être modifié. "
+                + "Vos autres sessions ouvertes ont été déconnectées.\n\n"
+                + "Si vous n'êtes pas à l'origine de ce changement, utilisez « Mot de passe oublié » "
+                + "pour en choisir un nouveau et contactez-nous à " + companyEmail + ".\n\n"
+                + "L'équipe CactusDS";
+        send(user.getEmail(), "Votre mot de passe a été modifié", body);
+    }
 
     public void notifyPasswordReset(User user, String resetLink) {
         String clientName = user.getFullName() != null ? user.getFullName() : user.getEmail();

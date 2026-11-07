@@ -46,4 +46,7 @@ public class Facture {
 
     @Column(name = "paiement_declare_at")
     private LocalDateTime paiementDeclareAt;
+
+    @Column(name = "date_echeance")
+    private LocalDate dateEcheance;
 }

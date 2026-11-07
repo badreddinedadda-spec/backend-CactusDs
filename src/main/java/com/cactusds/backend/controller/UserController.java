@@ -1,5 +1,6 @@
 package com.cactusds.backend.controller;
 
+import com.cactusds.backend.comon.audit.AuditLogService;
 import com.cactusds.backend.dto.AdminUserResponse;
 import com.cactusds.backend.dto.NoteInterneRequest;
 import com.cactusds.backend.dto.NoteInterneResponse;
@@ -26,12 +27,14 @@ public class UserController {
     private final UserRepository userRepository;
     private final CurrentUserResolver currentUserResolver;
     private final NoteInterneRepository noteInterneRepository;
+    private final AuditLogService auditLogService;
 
     public UserController(UserRepository userRepository, CurrentUserResolver currentUserResolver,
-                          NoteInterneRepository noteInterneRepository) {
+                          NoteInterneRepository noteInterneRepository, AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.currentUserResolver = currentUserResolver;
         this.noteInterneRepository = noteInterneRepository;
+        this.auditLogService = auditLogService;
     }
 
     @GetMapping
@@ -81,8 +84,11 @@ public class UserController {
                             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot demote the last remaining admin");
                         }
                     }
+                    Role previousRole = u.getRole();
                     u.setRole(req.role());
                     userRepository.save(u);
+                    auditLogService.log(self, "ROLE_CHANGE",
+                            "Rôle de " + u.getEmail() + " changé de " + previousRole + " à " + req.role());
                     return ResponseEntity.ok(AdminUserResponse.from(u));
                 })
                 .orElse(ResponseEntity.notFound().build());

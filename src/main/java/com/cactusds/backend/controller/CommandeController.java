@@ -1,4 +1,5 @@
 package com.cactusds.backend.controller;
+import com.cactusds.backend.comon.audit.AuditLogService;
 import com.cactusds.backend.dto.CommandeRequest;
 import com.cactusds.backend.dto.CommandeResponse;
 import com.cactusds.backend.dto.StatutUpdateRequest;
@@ -24,12 +25,14 @@ public class CommandeController {
     private final CommandeRepository commandeRepository;
     private final OffreRepository offreRepository;
     private final CurrentUserResolver currentUserResolver;
+    private final AuditLogService auditLogService;
 
     public CommandeController(CommandeRepository commandeRepository, OffreRepository offreRepository,
-                              CurrentUserResolver currentUserResolver) {
+                              CurrentUserResolver currentUserResolver, AuditLogService auditLogService) {
         this.commandeRepository = commandeRepository;
         this.offreRepository = offreRepository;
         this.currentUserResolver = currentUserResolver;
+        this.auditLogService = auditLogService;
     }
 
     @PostMapping("/api/client/commandes")
@@ -77,11 +80,17 @@ public class CommandeController {
 
     @PutMapping("/api/admin/commandes/{id}/statut")
     public ResponseEntity<CommandeResponse> updateStatut(@PathVariable Long id,
-                                                         @Valid @RequestBody StatutUpdateRequest req) {
+                                                         @Valid @RequestBody StatutUpdateRequest req,
+                                                         Authentication authentication) {
+        User admin = currentUserResolver.resolve(authentication);
         return commandeRepository.findById(id)
                 .map(commande -> {
+                    Commande.Statut previousStatut = commande.getStatut();
                     commande.setStatut(req.statut());
                     commandeRepository.save(commande);
+                    auditLogService.log(admin, "COMMANDE_STATUT_CHANGE",
+                            "Commande " + commande.getOffre().getNom() + " de " + commande.getUser().getEmail()
+                                    + " passée de " + previousStatut + " à " + req.statut());
                     return ResponseEntity.ok(CommandeResponse.from(commande));
                 })
                 .orElse(ResponseEntity.notFound().build());

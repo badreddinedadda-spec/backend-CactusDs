@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -56,6 +57,7 @@ public class FactureService {
                 .periodeDebut(periodeDebut)
                 .periodeFin(periodeFin)
                 .montantTotal(total)
+                .dateEcheance(BillingPolicy.dueDate(LocalDateTime.now()))
                 .build();
         factureRepository.save(facture);
 
